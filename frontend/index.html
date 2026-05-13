@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>成绩管理系统 V1.2</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body { margin: 0; background: #f4f6f8; font-family: Arial, "Microsoft YaHei", sans-serif; color: #333; }
+        .header { background: #2d3e50; color: white; padding: 16px 24px; font-size: 20px; }
+        .user-info { float: right; font-size: 14px; }
+        .container { width: 1180px; margin: 24px auto; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .login { width: 380px; margin: 100px auto; background: white; padding: 30px; border-radius: 8px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+        input, select { padding: 8px; margin: 6px 4px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 8px 14px; margin: 6px 4px; background: #2d89ef; border: none; color: white; border-radius: 4px; cursor: pointer; }
+        button:hover { opacity: 0.9; }
+        .secondary { background: #6c757d; }
+        .danger { background: #d9534f; }
+        .success { background: #28a745; }
+        .nav button { background: #4b6584; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 9px; text-align: center; }
+        th { background: #f0f2f5; }
+        .section-title { margin: 18px 0 8px; padding-left: 10px; border-left: 4px solid #2d89ef; font-size: 18px; font-weight: bold; }
+        .tip { color: #666; font-size: 14px; line-height: 1.8; }
+        .message { margin: 12px 0; padding: 10px; background: #eef6ff; border: 1px solid #cfe8ff; color: #22577a; border-radius: 4px; }
+        .stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 15px 0; }
+        .stat-card { min-width: 130px; padding: 12px; background: #f8f9fa; border: 1px solid #e2e2e2; border-radius: 6px; text-align: center; }
+        .stat-card strong { display: block; margin-top: 6px; font-size: 20px; color: #2d3e50; }
+        .form-line { margin-bottom: 8px; }
+        .edit-box { background: #fff8e1; border: 1px solid #f0d98c; padding: 12px; margin-top: 10px; border-radius: 6px; }
+        .chart-box { display: flex; gap: 14px; align-items: flex-end; height: 150px; padding: 15px; border: 1px solid #ddd; background: #fafafa; margin-top: 12px; }
+        .bar-item { width: 120px; text-align: center; }
+        .bar { width: 55px; margin: 0 auto 8px; background: #2d89ef; min-height: 4px; border-radius: 4px 4px 0 0; }
+        .small { font-size: 12px; color: #777; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <div v-if="!user" class="login">
+        <h2>成绩管理系统 V1.2</h2>
+        <input v-model="loginForm.username" placeholder="用户名" style="width: 320px;"><br>
+        <input v-model="loginForm.password" type="password" placeholder="密码" style="width: 320px;"><br>
+        <button @click="login">登录</button>
+        <p class="tip">测试账号：admin / teacher / teacher2 / student / student2，密码均为 123456</p>
+        <p style="color:red">{{ message }}</p>
+    </div>
+
+    <div v-else>
+        <div class="header">
+             成绩管理系统 V1.2
+            <span class="user-info">
+                当前用户：{{ user.real_name }}（{{ roleName(user.role) }}）
+                <button class="secondary" @click="logout">退出</button>
+            </span>
+        </div>
+
+        <div class="container">
+            <div class="nav">
+                <button v-if="user.role === 'admin'" @click="page='users'; loadUsers()">用户管理</button>
+                <button v-if="user.role === 'admin'" @click="page='students'">学生管理</button>
+                <button v-if="user.role !== 'student'" @click="page='courses'">课程管理</button>
+                <button v-if="user.role !== 'student'" @click="page='scores'">成绩录入与修改</button>
+                <button @click="page='query'; loadScores()">成绩查询与统计</button>
+                <button v-if="user.role === 'admin'" @click="page='logs'; loadLogs()">操作日志</button>
+            </div>
+
+            <div v-if="message" class="message">{{ message }}</div>
+
+            <div v-if="page==='users' && user.role === 'admin'">
+                <div class="section-title">用户管理</div>
+                <div class="tip">第二次迭代新增：管理员可以维护账号、设置角色、禁用账号和重置密码。</div>
+                <div class="form-line">
+                    <input v-model="userForm.username" placeholder="用户名">
+                    <input v-model="userForm.password" placeholder="密码">
+                    <input v-model="userForm.realName" placeholder="姓名">
+                    <select v-model="userForm.role">
+                        <option value="admin">管理员</option>
+                        <option value="teacher">教师</option>
+                        <option value="student">学生</option>
+                    </select>
+                    <select v-model="userForm.status">
+                        <option>启用</option>
+                        <option>禁用</option>
+                    </select>
+                    <input v-model="userForm.relatedNo" placeholder="关联学号/教师姓名">
+                    <button @click="addUser">添加用户</button>
+                </div>
+                <table>
+                    <tr><th>ID</th><th>用户名</th><th>姓名</th><th>角色</th><th>状态</th><th>关联编号</th><th>操作</th></tr>
+                    <tr v-for="u in users" :key="u.id">
+                        <td>{{ u.id }}</td>
+                        <td>{{ u.username }}</td>
+                        <td><input v-model="u.real_name" style="width:90px"></td>
+                        <td>
+                            <select v-model="u.role">
+                                <option value="admin">管理员</option><option value="teacher">教师</option><option value="student">学生</option>
+                            </select>
+                        </td>
+                        <td><select v-model="u.status"><option>启用</option><option>禁用</option></select></td>
+                        <td><input v-model="u.related_no" style="width:120px"></td>
+                        <td>
+                            <button @click="updateUser(u)">保存</button>
+                            <button class="secondary" @click="resetPassword(u.id)">重置密码</button>
+                            <button class="danger" @click="deleteUser(u.id)">删除</button>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div v-if="page==='students' && user.role === 'admin'">
+                <div class="section-title">学生管理</div>
+                <div class="form-line">
+                    <input v-model="studentForm.studentNo" placeholder="学号">
+                    <input v-model="studentForm.name" placeholder="姓名">
+                    <select v-model="studentForm.gender"><option>男</option><option>女</option></select>
+                    <input v-model="studentForm.className" placeholder="班级">
+                    <button @click="addStudent">添加学生</button>
+                </div>
+                <table>
+                    <tr><th>ID</th><th>学号</th><th>姓名</th><th>性别</th><th>班级</th><th>操作</th></tr>
+                    <tr v-for="s in students" :key="s.id">
+                        <td>{{ s.id }}</td><td>{{ s.student_no }}</td><td>{{ s.name }}</td><td>{{ s.gender }}</td><td>{{ s.class_name }}</td>
+                        <td><button class="danger" @click="deleteStudent(s.id)">删除</button></td>
+                    </tr>
+                </table>
+            </div>
+
+            <div v-if="page==='courses' && user.role !== 'student'">
+                <div class="section-title">课程管理</div>
+                <div class="tip">第二次迭代新增：课程绑定任课教师，教师登录后只看到自己的课程。</div>
+                <div class="form-line" v-if="user.role === 'admin'">
+                    <input v-model="courseForm.courseNo" placeholder="课程编号">
+                    <input v-model="courseForm.courseName" placeholder="课程名称">
+                    <input v-model="courseForm.teacherName" placeholder="任课教师">
+                    <input v-model="courseForm.credit" placeholder="学分">
+                    <button @click="addCourse">添加课程</button>
+                </div>
+                <table>
+                    <tr><th>ID</th><th>课程编号</th><th>课程名称</th><th>任课教师</th><th>学分</th><th v-if="user.role==='admin'">操作</th></tr>
+                    <tr v-for="c in courses" :key="c.id">
+                        <td>{{ c.id }}</td><td>{{ c.course_no }}</td><td>{{ c.course_name }}</td><td>{{ c.teacher_name }}</td><td>{{ c.credit }}</td>
+                        <td v-if="user.role==='admin'"><button class="danger" @click="deleteCourse(c.id)">删除</button></td>
+                    </tr>
+                </table>
+            </div>
+
+            <div v-if="page==='scores' && user.role !== 'student'">
+                <div class="section-title">成绩录入</div>
+                <div class="tip">第二次迭代新增：管理员可操作全部成绩，教师只能操作自己课程的成绩。</div>
+                <div class="form-line">
+                    <select v-model="scoreForm.studentId">
+                        <option value="">选择学生</option>
+                        <option v-for="s in students" :value="s.id">{{ s.name }} - {{ s.student_no }} - {{ s.class_name }}</option>
+                    </select>
+                    <select v-model="scoreForm.courseId">
+                        <option value="">选择课程</option>
+                        <option v-for="c in courses" :value="c.id">{{ c.course_name }} - {{ c.teacher_name }}</option>
+                    </select>
+                    <input v-model="scoreForm.score" placeholder="成绩0-100">
+                    <input v-model="scoreForm.term" placeholder="学期，如2025-2026-1">
+                    <button @click="addScore">录入成绩</button>
+                </div>
+                <div v-if="editScoreForm.id" class="edit-box">
+                    正在修改：{{ editScoreForm.studentName }} - {{ editScoreForm.courseName }}
+                    <input v-model="editScoreForm.score" placeholder="成绩0-100">
+                    <input v-model="editScoreForm.term" placeholder="学期">
+                    <button class="success" @click="updateScore">保存修改</button>
+                    <button class="secondary" @click="cancelEditScore">取消</button>
+                </div>
+            </div>
+
+            <div v-if="page==='query' || page==='scores'">
+                <div class="section-title">成绩查询、导出与可视化统计</div>
+                <div class="form-line">
+                    <input v-model="query.keyword" placeholder="综合查询：姓名/学号/课程">
+                    <input v-model="query.studentName" placeholder="学生姓名" :disabled="user.role==='student'">
+                    <input v-model="query.courseName" placeholder="课程名称">
+                    <input v-model="query.className" placeholder="班级">
+                    <input v-model="query.term" placeholder="学期">
+                    <button @click="loadScores">查询</button>
+                    <button class="secondary" @click="resetQuery">显示全部</button>
+                    <button class="success" v-if="user.role !== 'student'" @click="exportScores">导出成绩CSV</button>
+                </div>
+
+                <div class="stats">
+                    <div class="stat-card">记录数<strong>{{ stats.total_count || 0 }}</strong></div>
+                    <div class="stat-card">平均分<strong>{{ stats.avg_score || 0 }}</strong></div>
+                    <div class="stat-card">最高分<strong>{{ stats.max_score || 0 }}</strong></div>
+                    <div class="stat-card">最低分<strong>{{ stats.min_score || 0 }}</strong></div>
+                    <div class="stat-card">及格人数<strong>{{ stats.pass_count || 0 }}</strong></div>
+                    <div class="stat-card">不及格人数<strong>{{ stats.fail_count || 0 }}</strong></div>
+                    <div class="stat-card">及格率<strong>{{ stats.pass_rate || 0 }}%</strong></div>
+                </div>
+
+                <div class="chart-box">
+                    <div class="bar-item">
+                        <div class="bar" :style="{height: barHeight(stats.excellent_count)}"></div>
+                        <div>优秀<br><span class="small">{{ stats.excellent_count || 0 }}人</span></div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" :style="{height: barHeight(stats.good_count)}"></div>
+                        <div>良好<br><span class="small">{{ stats.good_count || 0 }}人</span></div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" :style="{height: barHeight(stats.normal_count)}"></div>
+                        <div>及格<br><span class="small">{{ stats.normal_count || 0 }}人</span></div>
+                    </div>
+                    <div class="bar-item">
+                        <div class="bar" :style="{height: barHeight(stats.fail_count)}"></div>
+                        <div>不及格<br><span class="small">{{ stats.fail_count || 0 }}人</span></div>
+                    </div>
+                </div>
+
+                <table>
+                    <tr>
+                        <th>ID</th><th>学号</th><th>姓名</th><th>班级</th><th>课程</th><th>任课教师</th><th>学分</th><th>成绩</th><th>学期</th>
+                        <th v-if="user.role !== 'student'">操作</th>
+                    </tr>
+                    <tr v-for="sc in scores" :key="sc.id">
+                        <td>{{ sc.id }}</td><td>{{ sc.student_no }}</td><td>{{ sc.student_name }}</td><td>{{ sc.class_name }}</td>
+                        <td>{{ sc.course_name }}</td><td>{{ sc.teacher_name }}</td><td>{{ sc.credit }}</td><td>{{ sc.score }}</td><td>{{ sc.term }}</td>
+                        <td v-if="user.role !== 'student'">
+                            <button @click="startEditScore(sc)">修改</button>
+                            <button class="danger" @click="deleteScore(sc.id)">删除</button>
+                        </td>
+                    </tr>
+                    <tr v-if="scores.length === 0"><td :colspan="user.role !== 'student' ? 10 : 9">暂无成绩数据</td></tr>
+                </table>
+            </div>
+
+            <div v-if="page==='logs' && user.role === 'admin'">
+                <div class="section-title">操作日志</div>
+                <div class="tip">第二次迭代新增：记录成绩、用户、学生和课程的关键操作，方便追踪修改记录。</div>
+                <div class="form-line">
+                    <input v-model="logKeyword" placeholder="按操作人/类型/内容查询">
+                    <button @click="loadLogs">查询日志</button>
+                </div>
+                <table>
+                    <tr><th>ID</th><th>操作人</th><th>角色</th><th>操作类型</th><th>操作内容</th><th>时间</th></tr>
+                    <tr v-for="log in logs" :key="log.id">
+                        <td>{{ log.id }}</td><td>{{ log.operator_name }}</td><td>{{ roleName(log.operator_role) }}</td><td>{{ log.action_type }}</td><td>{{ log.action_content }}</td><td>{{ log.created_at }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = 'http://localhost:8080/api';
+
+Vue.createApp({
+    data() {
+        return {
+            user: null,
+            message: '',
+            page: 'query',
+            loginForm: { username: 'admin', password: '123456' },
+            userForm: { username: '', password: '123456', realName: '', role: 'student', status: '启用', relatedNo: '' },
+            studentForm: { studentNo: '', name: '', gender: '男', className: '' },
+            courseForm: { courseNo: '', courseName: '', teacherName: '李老师', credit: 2 },
+            scoreForm: { studentId: '', courseId: '', score: '', term: '2025-2026-1' },
+            editScoreForm: { id: '', score: '', term: '', studentName: '', courseName: '' },
+            query: { keyword: '', studentName: '', courseName: '', className: '', term: '' },
+            stats: { total_count: 0, avg_score: 0, max_score: 0, min_score: 0, pass_count: 0, fail_count: 0, pass_rate: 0, excellent_count: 0, good_count: 0, normal_count: 0 },
+            users: [], students: [], courses: [], scores: [], logs: [], logKeyword: ''
+        }
+    },
+    methods: {
+        roleName(role) {
+            if (role === 'admin') return '管理员';
+            if (role === 'teacher') return '教师';
+            if (role === 'student') return '学生';
+            return role || '未知';
+        },
+        authParams() {
+            return {
+                userRole: this.user ? this.user.role : '',
+                realName: this.user ? this.user.real_name : '',
+                relatedNo: this.user ? this.user.related_no : ''
+            };
+        },
+        withOperator(data) {
+            return Object.assign({}, data, {
+                operatorName: this.user.real_name,
+                operatorRole: this.user.role
+            });
+        },
+        showMessage(text) { this.message = text; },
+        getErrorMessage(error) {
+            if (error.response && error.response.data) {
+                return error.response.data.message || error.response.data.error || '操作失败';
+            }
+            return '操作失败，请检查后端是否启动或数据库是否正常';
+        },
+        async login() {
+            this.message = '';
+            try {
+                const res = await axios.post(API + '/login', this.loginForm);
+                if (res.data.success) {
+                    this.user = res.data.user;
+                    this.page = this.user.role === 'student' ? 'query' : 'scores';
+                    await this.loadAll();
+                    this.showMessage('登录成功');
+                } else {
+                    this.message = res.data.message;
+                }
+            } catch (e) { this.message = this.getErrorMessage(e); }
+        },
+        logout() { this.user = null; this.message = ''; },
+        async loadAll() {
+            await this.loadStudents();
+            await this.loadCourses();
+            await this.loadScores();
+            if (this.user.role === 'admin') await this.loadUsers();
+        },
+        async loadUsers() {
+            const res = await axios.get(API + '/users');
+            this.users = res.data;
+        },
+        async addUser() {
+            try {
+                await axios.post(API + '/users', this.withOperator(this.userForm));
+                this.userForm = { username: '', password: '123456', realName: '', role: 'student', status: '启用', relatedNo: '' };
+                await this.loadUsers();
+                this.showMessage('添加用户成功');
+            } catch(e) { this.showMessage(this.getErrorMessage(e)); }
+        },
+        async updateUser(u) {
+            try {
+                await axios.put(API + '/users/' + u.id, this.withOperator({ realName: u.real_name, role: u.role, status: u.status, relatedNo: u.related_no }));
+                await this.loadUsers();
+                this.showMessage('修改用户成功');
+            } catch(e) { this.showMessage(this.getErrorMessage(e)); }
+        },
+        async resetPassword(id) {
+            if (confirm('确定把该用户密码重置为123456吗？')) {
+                await axios.put(API + '/users/' + id + '/password', this.withOperator({ password: '123456' }));
+                this.showMessage('密码已重置为123456');
+            }
+        },
+        async deleteUser(id) {
+            if (confirm('确定删除该用户吗？')) {
+                await axios.delete(API + '/users/' + id, { params: { operatorName: this.user.real_name, operatorRole: this.user.role } });
+                await this.loadUsers();
+                this.showMessage('删除用户成功');
+            }
+        },
+        async loadStudents() {
+            const res = await axios.get(API + '/students');
+            this.students = res.data;
+        },
+        async loadCourses() {
+            const res = await axios.get(API + '/courses', { params: this.authParams() });
+            this.courses = res.data;
+        },
+        async loadScores() {
+            const params = Object.assign({}, this.query, this.authParams());
+            const res = await axios.get(API + '/scores', { params });
+            this.scores = res.data;
+            await this.loadStats();
+            this.showMessage(this.scores.length === 0 ? '没有查询到成绩数据' : '查询完成，共 ' + this.scores.length + ' 条记录');
+        },
+        async loadStats() {
+            const params = Object.assign({}, this.query, this.authParams());
+            const res = await axios.get(API + '/scores/stats', { params });
+            this.stats = res.data;
+        },
+        async loadLogs() {
+            const res = await axios.get(API + '/logs', { params: { keyword: this.logKeyword } });
+            this.logs = res.data;
+        },
+        resetQuery() {
+            this.query = { keyword: '', studentName: '', courseName: '', className: '', term: '' };
+            this.loadScores();
+        },
+        async addStudent() {
+            try {
+                await axios.post(API + '/students', this.withOperator(this.studentForm));
+                this.studentForm = { studentNo: '', name: '', gender: '男', className: '' };
+                await this.loadStudents();
+                this.showMessage('添加学生成功');
+            } catch(e) { this.showMessage(this.getErrorMessage(e)); }
+        },
+        async deleteStudent(id) {
+            if (confirm('确定删除该学生吗？删除学生会同时删除该学生成绩。')) {
+                await axios.delete(API + '/students/' + id, { params: { operatorName: this.user.real_name, operatorRole: this.user.role } });
+                await this.loadAll();
+                this.showMessage('删除学生成功');
+            }
+        },
+        async addCourse() {
+            try {
+                await axios.post(API + '/courses', this.withOperator(this.courseForm));
+                this.courseForm = { courseNo: '', courseName: '', teacherName: '李老师', credit: 2 };
+                await this.loadCourses();
+                this.showMessage('添加课程成功');
+            } catch(e) { this.showMessage(this.getErrorMessage(e)); }
+        },
+        async deleteCourse(id) {
+            if (confirm('确定删除该课程吗？删除课程会同时删除相关成绩。')) {
+                await axios.delete(API + '/courses/' + id, { params: { operatorName: this.user.real_name, operatorRole: this.user.role } });
+                await this.loadAll();
+                this.showMessage('删除课程成功');
+            }
+        },
+        async addScore() {
+            try {
+                await axios.post(API + '/scores', this.withOperator(this.scoreForm));
+                this.scoreForm.score = '';
+                await this.loadScores();
+                this.showMessage('录入成绩成功');
+            } catch(e) { this.showMessage(this.getErrorMessage(e)); }
+        },
+        startEditScore(sc) {
+            this.editScoreForm = { id: sc.id, score: sc.score, term: sc.term, studentName: sc.student_name, courseName: sc.course_name };
+            this.page = 'scores';
+        },
+        cancelEditScore() { this.editScoreForm = { id: '', score: '', term: '', studentName: '', courseName: '' }; },
+        async updateScore() {
+            try {
+                await axios.put(API + '/scores/' + this.editScoreForm.id, this.withOperator({ score: this.editScoreForm.score, term: this.editScoreForm.term }));
+                this.cancelEditScore();
+                await this.loadScores();
+                this.showMessage('修改成绩成功');
+            } catch(e) { this.showMessage(this.getErrorMessage(e)); }
+        },
+        async deleteScore(id) {
+            if (confirm('确定删除该成绩吗？')) {
+                try {
+                    await axios.delete(API + '/scores/' + id, { params: { operatorName: this.user.real_name, operatorRole: this.user.role } });
+                    await this.loadScores();
+                    this.showMessage('删除成绩成功');
+                } catch(e) { this.showMessage(this.getErrorMessage(e)); }
+            }
+        },
+        async exportScores() {
+            const params = Object.assign({}, this.query, this.authParams());
+            const res = await axios.get(API + '/scores/export', { params, responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '成绩导出-v1.2.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+            this.showMessage('成绩已导出');
+        },
+        barHeight(value) {
+            const total = Number(this.stats.total_count || 0);
+            const num = Number(value || 0);
+            if (total === 0) return '4px';
+            return Math.max(4, Math.round(num / total * 120)) + 'px';
+        }
+    }
+}).mount('#app');
+</script>
+</body>
+</html>
